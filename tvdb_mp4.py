@@ -68,7 +68,6 @@ class Tvdb_mp4:
         video = MP4(mp4Path)
         try:
             video.delete()
-            video.save()
         except IOError:
             self.log.debug("Unable to clear original tags, attempting to proceed.")
 
@@ -167,7 +166,7 @@ class Tvdb_mp4:
         # Write actors
         output.write(castheader)
         for a in self.showdata['_actors'][:5]:
-            if a is not None:
+            if a is not None and a['name'] is not None:
                 output.write("<dict><key>name</key><string>%s</string></dict>\n" % a['name'].encode('ascii', errors='ignore'))
         output.write(subfooter)
 
@@ -206,8 +205,9 @@ class Tvdb_mp4:
         if poster is None:
             if thumbnail:
                 try:
-                    poster = urlretrieve(self.episodedata['filename'], os.path.join(tempfile.gettempdir(), "poster.jpg"))[0]
-                except:
+                    poster = urlretrieve(self.episodedata['filename'], os.path.join(tempfile.gettempdir(), "poster-tvdb.jpg"))[0]
+                except Exception as e:
+                    self.log.error("Exception while retrieving poster %s.", str(e))
                     poster = None
             else:
                 posters = posterCollection()
@@ -268,6 +268,7 @@ def main():
             tvdb_mp4_instance.writeTags(mp4)
         else:
             print("Wrong file type")
+
 
 if __name__ == '__main__':
     main()

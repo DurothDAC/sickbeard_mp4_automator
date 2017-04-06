@@ -60,7 +60,8 @@ class AudioCodec(BaseCodec):
         'source': int,
         'path': str,
         'filter': str,
-        'map': int
+        'map': int,
+        'disposition': str,
     }
 
     def parse_options(self, opt, stream=0):
@@ -95,6 +96,11 @@ class AudioCodec(BaseCodec):
         else:
             s = str(0)
 
+        if 'filter' in safe:
+            x = safe['filter']
+            if len(x) < 1:
+                del safe['filter']
+
         safe = self._codec_specific_parse_options(safe)
         optlist = []
         optlist.extend(['-c:a:' + stream, self.ffmpeg_codec_name])
@@ -102,6 +108,8 @@ class AudioCodec(BaseCodec):
             optlist.extend(['-i', str(safe['path'])])
         if 'map' in safe:
             optlist.extend(['-map', s + ':' + str(safe['map'])])
+        if 'disposition' in safe:
+            optlist.extend(['-disposition:a:' + stream, str(safe['disposition'])])
         if 'channels' in safe:
             optlist.extend(['-ac:a:' + stream, str(safe['channels'])])
         if 'bitrate' in safe:
@@ -111,7 +119,7 @@ class AudioCodec(BaseCodec):
         if 'filter' in safe:
             optlist.extend(['-filter:a:' + stream, str(safe['filter'])])
         if 'language' in safe:
-                lang = str(safe['language'])
+            lang = str(safe['language'])
         else:
             lang = 'und'  # Never leave blank if not specified, always set to und for undefined
         optlist.extend(['-metadata:s:a:' + stream, "language=" + lang])
@@ -188,7 +196,7 @@ class SubtitleCodec(BaseCodec):
         if 'forced' in safe:
             optlist.extend(['-metadata:s:s:' + stream, "disposition:forced=" + str(safe['forced'])])
         if 'language' in safe:
-                lang = str(safe['language'])
+            lang = str(safe['language'])
         else:
             lang = 'und'  # Never leave blank if not specified, always set to und for undefined
         optlist.extend(['-metadata:s:s:' + stream, "language=" + lang])
@@ -229,6 +237,7 @@ class VideoCodec(BaseCodec):
     encoder_options = {
         'codec': str,
         'bitrate': int,
+        'crf': int,
         'fps': int,
         'width': int,
         'height': int,
@@ -313,6 +322,11 @@ class VideoCodec(BaseCodec):
             if br < 16 or br > 15000:
                 del safe['bitrate']
 
+        if 'crf' in safe:
+            crf = safe['crf']
+            if crf < 0 or crf > 51:
+                del safe['crf']
+
         w = None
         h = None
 
@@ -366,6 +380,8 @@ class VideoCodec(BaseCodec):
             optlist.extend(['-pix_fmt', str(safe['pix_fmt'])])
         if 'bitrate' in safe:
             optlist.extend(['-vb', str(safe['bitrate']) + 'k'])  # FIXED
+        if 'crf' in safe:
+            optlist.extend(['-crf', str(safe['crf'])])
         if 'filter' in safe:
             if filters:
                 filters = '%s;%s' % (filters, str(safe['filter']))
@@ -437,7 +453,8 @@ class AudioCopyCodec(BaseCodec):
     encoder_options = {'language': str,
                        'source': str,
                        'map': int,
-                       'bsf': str}
+                       'bsf': str,
+                       'disposition': str}
 
     def parse_options(self, opt, stream=0):
         safe = self.safe_options(opt)
@@ -452,15 +469,16 @@ class AudioCopyCodec(BaseCodec):
             optlist.extend(['-map', s + ':' + str(safe['map'])])
         if 'bsf' in safe:
             optlist.extend(['-bsf:a:' + stream, str(safe['bsf'])])
+        lang = 'und'
         if 'language' in safe:
             l = safe['language']
             if len(l) > 3:
                 del safe['language']
             else:
                 lang = str(safe['language'])
-        else:
-            lang = 'und'
         optlist.extend(['-metadata:s:a:' + stream, "language=" + lang])
+        if 'disposition' in safe:
+            optlist.extend(['-disposition:a:' + stream, str(safe['disposition'])])
         return optlist
 
 
@@ -512,7 +530,6 @@ class SubtitleCopyCodec(BaseCodec):
 class VorbisCodec(AudioCodec):
     """
     Vorbis audio codec.
-    @see http://ffmpeg.org/trac/ffmpeg/wiki/TheoraVorbisEncodingGuide
     """
     codec_name = 'vorbis'
     ffmpeg_codec_name = 'libvorbis'
@@ -538,6 +555,13 @@ class AacCodec(AudioCodec):
     ffmpeg_codec_name = 'aac'
     aac_experimental_enable = ['-strict', 'experimental']
 
+    def parse_options(self, opt, stream=0):
+        if 'channels' in opt:
+            c = opt['channels']
+            if c > 6:
+                opt['channels'] = 6
+        return super(AacCodec, self).parse_options(opt, stream)
+
     def _codec_specific_produce_ffmpeg_list(self, safe, stream=0):
         return self.aac_experimental_enable
 
@@ -549,6 +573,13 @@ class FdkAacCodec(AudioCodec):
     codec_name = 'libfdk_aac'
     ffmpeg_codec_name = 'libfdk_aac'
 
+    def parse_options(self, opt, stream=0):
+        if 'channels' in opt:
+            c = opt['channels']
+            if c > 6:
+                opt['channels'] = 6
+        return super(FdkAacCodec, self).parse_options(opt, stream)
+
 
 class FAacCodec(AudioCodec):
     """
@@ -556,6 +587,13 @@ class FAacCodec(AudioCodec):
     """
     codec_name = 'libfaac'
     ffmpeg_codec_name = 'libfaac'
+
+    def parse_options(self, opt, stream=0):
+        if 'channels' in opt:
+            c = opt['channels']
+            if c > 6:
+                opt['channels'] = 6
+        return super(FAacCodec, self).parse_options(opt, stream)
 
 
 class Ac3Codec(AudioCodec):
@@ -572,6 +610,24 @@ class Ac3Codec(AudioCodec):
                 opt['channels'] = 6
         return super(Ac3Codec, self).parse_options(opt, stream)
 
+class EAc3Codec(AudioCodec):
+    """
+    Dolby Digital Plus/EAC3 audio codec.
+    """
+    codec_name = 'eac3'
+    ffmpeg_codec_name = 'eac3'
+
+    def parse_options(self, opt, stream=0):
+        if 'channels' in opt:
+            c = opt['channels']
+            if c > 8:
+                opt['channels'] = 8
+        if 'bitrate' in opt:
+            br = opt['bitrate']
+            if br > 640:
+                opt['bitrate'] = 640
+        return super(EAc3Codec, self).parse_options(opt, stream)
+
 
 class FlacCodec(AudioCodec):
     """
@@ -579,6 +635,10 @@ class FlacCodec(AudioCodec):
     """
     codec_name = 'flac'
     ffmpeg_codec_name = 'flac'
+    flac_experimental_enable = ['-strict', 'experimental']
+
+    def _codec_specific_produce_ffmpeg_list(self, safe, stream=0):
+        return self.flac_experimental_enable
 
 
 class DtsCodec(AudioCodec):
@@ -609,7 +669,6 @@ class Mp2Codec(AudioCodec):
 class TheoraCodec(VideoCodec):
     """
     Theora video codec.
-    @see http://ffmpeg.org/trac/ffmpeg/wiki/TheoraVorbisEncodingGuide
     """
     codec_name = 'theora'
     ffmpeg_codec_name = 'libtheora'
@@ -629,7 +688,6 @@ class TheoraCodec(VideoCodec):
 class H264Codec(VideoCodec):
     """
     H.264/AVC video codec.
-    @see http://ffmpeg.org/trac/ffmpeg/wiki/x264EncodingGuide
     """
     codec_name = 'h264'
     ffmpeg_codec_name = 'libx264'
@@ -639,7 +697,6 @@ class H264Codec(VideoCodec):
         # faster, fast, medium(default), slow, slower, veryslow
         'quality': int,  # constant rate factor, range:0(lossless)-51(worst)
         # default:23, recommended: 18-28
-        # http://mewiki.project357.com/wiki/X264_Settings#profile
         'profile': str,  # default: not-set, for valid values see above link
         'level': float,  # default: not-set, values range from 3.0 to 4.2
         'tune': str,  # default: not-set, for valid values see above link
@@ -684,7 +741,6 @@ class H264Codec(VideoCodec):
 class NVEncH264(H264Codec):
     """
     Nvidia H.264/AVC video codec.
-    @see http://ffmpeg.org/trac/ffmpeg/wiki/x264EncodingGuide
     """
     codec_name = 'nvenc_h264'
     ffmpeg_codec_name = 'nvenc_h264'
@@ -693,7 +749,6 @@ class NVEncH264(H264Codec):
 class H264QSV(H264Codec):
     """
     H.264/AVC video codec.
-    @see http://ffmpeg.org/trac/ffmpeg/wiki/x264EncodingGuide
     """
     codec_name = 'h264qsv'
     ffmpeg_codec_name = 'h264_qsv'
@@ -707,7 +762,6 @@ class H264QSV(H264Codec):
 class H265Codec(VideoCodec):
     """
     H.265/AVC video codec.
-    @see https://trac.ffmpeg.org/wiki/Encode/H.265
     """
     codec_name = 'h265'
     ffmpeg_codec_name = 'libx265'
@@ -717,7 +771,6 @@ class H265Codec(VideoCodec):
         # faster, fast, medium(default), slow, slower, veryslow
         'quality': int,  # constant rate factor, range:0(lossless)-51(worst)
         # default:23, recommended: 18-28
-        # http://mewiki.project357.com/wiki/X264_Settings#profile
         'profile': str,  # default: not-set, for valid values see above link
         'level': float,  # default: not-set, values range from 3.0 to 4.2
         'tune': str,  # default: not-set, for valid values see above link
@@ -759,7 +812,6 @@ class H265Codec(VideoCodec):
 class NVEncH265(H265Codec):
     """
     Nvidia H.265/AVC video codec.
-    @see https://trac.ffmpeg.org/wiki/Encode/H.265
     """
     codec_name = 'nvenc_h265'
     ffmpeg_codec_name = 'nvenc_hevc'
@@ -897,7 +949,7 @@ class DVDSub(SubtitleCodec):
 
 audio_codec_list = [
     AudioNullCodec, AudioCopyCodec, VorbisCodec, AacCodec, Mp3Codec, Mp2Codec,
-    FdkAacCodec, FAacCodec, Ac3Codec, DtsCodec, FlacCodec
+    FdkAacCodec, FAacCodec, EAc3Codec, Ac3Codec, DtsCodec, FlacCodec
 ]
 
 video_codec_list = [

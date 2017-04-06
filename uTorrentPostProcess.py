@@ -2,7 +2,7 @@ import os
 import re
 import sys
 import shutil
-from autoprocess import autoProcessTV, autoProcessMovie, autoProcessTVSR, sonarr
+from autoprocess import autoProcessTV, autoProcessMovie, autoProcessTVSR, sonarr, radarr
 from readSettings import ReadSettings
 from mkvtomp4 import MkvtoMp4
 import logging
@@ -53,7 +53,7 @@ if len(sys.argv) < 6:
 settings = ReadSettings(os.path.dirname(sys.argv[0]), "autoProcess.ini")
 path = str(sys.argv[3])
 label = sys.argv[1].lower()
-categories = [settings.uTorrent['cp'], settings.uTorrent['sb'], settings.uTorrent['sonarr'], settings.uTorrent['sr'], settings.uTorrent['bypass']]
+categories = [settings.uTorrent['cp'], settings.uTorrent['sb'], settings.uTorrent['sonarr'], settings.uTorrent['radarr'], settings.uTorrent['sr'], settings.uTorrent['bypass']]
 torrent_hash = sys.argv[6]
 try:
     name = sys.argv[7]
@@ -101,14 +101,19 @@ if web_ui:
             log.debug("Sending action %s to uTorrent" % settings.uTorrentActionBefore)
 
 if settings.uTorrent['convert']:
+    # Check for custom uTorrent output_dir
+    if settings.uTorrent['output_dir']:
+        settings.output_dir = settings.uTorrent['output_dir']
+        log.debug("Overriding output_dir to %s." % settings.uTorrent['output_dir'])
+
     # Perform conversion.
     log.info("Performing conversion")
     settings.delete = False
     if not settings.output_dir:
-        settings.output_dir = os.path.join(path, name)
+        settings.output_dir = os.path.join(path, ("%s-convert" % name))
         if not os.path.exists(settings.output_dir):
             os.mkdir(settings.output_dir)
-        delete_dir = os.path.join(path, name)
+        delete_dir = settings.output_dir
 
     converter = MkvtoMp4(settings)
 
@@ -133,9 +138,6 @@ if settings.uTorrent['convert']:
                     try:
                         output = converter.process(inputfile)
                         ignore.append(output['output'])
-                        if (label == categories[2] and settings.relocate_moov):
-                            log.debug("Performing QTFS move because video was converted and Sonarr has no post processing.")
-                            converter.QTFS(output['output'])
                     except:
                         log.exception("Error converting file %s." % inputfile)
                 else:
@@ -170,9 +172,12 @@ elif label == categories[2]:
     log.info("Passing %s directory to Sonarr." % path)
     sonarr.processEpisode(path, settings)
 elif label == categories[3]:
+    log.info("Passing %s directory to Radarr." % path)
+    radarr.processMovie(path, settings)
+elif label == categories[4]:
     log.info("Passing %s directory to Sickrage." % path)
     autoProcessTVSR.processEpisode(path, settings)
-elif label == categories[4]:
+elif label == categories[5]:
     log.info("Bypassing any further processing as per category.")
 
 # Run a uTorrent action after conversion.
